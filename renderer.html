@@ -1,0 +1,504 @@
+<!DOCTYPE html>
+<html lang="pt-br">
+<head>
+  <meta charset="UTF-8" />
+  <title>Oócito Secundário 3D Interativo</title>
+  <style>
+    html,body { margin:0; padding:0; width:100vw; height:100vh; background:#0a1020; overflow:hidden; }
+    #tooltip {
+      position: absolute; pointer-events: none; background: rgba(20,30,60,0.95); color: #fff; font-size: 15px;
+      border-radius: 6px; padding: 7px 14px; z-index: 10; box-shadow: 0 2px 12px #0008; display: none;
+      border: 1px solid #3af;
+    }
+  </style>
+</head>
+<body>
+<div id="tooltip"></div>
+<script type="module">
+import * as THREE from 'https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.module.js';
+import { OrbitControls } from 'https://cdn.jsdelivr.net/npm/three@0.160.0/examples/jsm/controls/OrbitControls.js';
+import { RGBELoader } from 'https://cdn.jsdelivr.net/npm/three@0.160.0/examples/jsm/loaders/RGBELoader.js';
+
+const w = window.innerWidth, h = window.innerHeight;
+const scene = new THREE.Scene();
+scene.background = new THREE.Color(0x0a1020);
+
+// Glow volumétrico do citoplasma
+const glow = new THREE.PointLight(0x6fd6ff, 0.7, 60, 2); glow.position.set(0,0,0); scene.add(glow);
+
+// Câmera e controles
+const camera = new THREE.PerspectiveCamera(45, w/h, 0.1, 2000);
+camera.position.set(0,0,32);
+const renderer = new THREE.WebGLRenderer({antialias:true, alpha:false});
+renderer.setClearColor(0x0a1020);
+renderer.setSize(w,h);
+renderer.toneMapping = THREE.ACESFilmicToneMapping;
+renderer.toneMappingExposure = 1.1;
+document.body.appendChild(renderer.domElement);
+
+const controls = new OrbitControls(camera, renderer.domElement);
+controls.enableDamping = true;
+controls.minDistance = 8;
+controls.maxDistance = 80;
+
+// Iluminação volumétrica interna
+scene.add(new THREE.AmbientLight(0xffffff, 0.25));
+const dirLight = new THREE.DirectionalLight(0xffffff, 0.7);
+dirLight.position.set(20,30,40); scene.add(dirLight);
+
+// HDRI para refração realista
+new RGBELoader().setDataType(THREE.HalfFloatType)
+  .load('https://dl.polyhaven.org/file/ph-assets/HDRIs/hdr/1k/venice_sunset_1k.hdr', env => {
+    env.mapping = THREE.EquirectangularReflectionMapping;
+    scene.environment = env;
+  });
+
+// Membrana com refração, brilho e translucidez
+const membrane = new THREE.Mesh(
+  new THREE.SphereGeometry(10, 128, 128),
+  new THREE.MeshPhysicalMaterial({
+    color: 0x1a237e,
+    metalness: 0.25,
+    roughness: 0.18,
+    transmission: 0.92,
+    thickness: 0.7,
+    ior: 1.45,
+    clearcoat: 0.7,
+    clearcoatRoughness: 0.12,
+    reflectivity: 0.45,
+    envMapIntensity: 1.2,
+    side: THREE.DoubleSide,
+    opacity: 0.82,
+    transparent: true,
+    sheen: 1,
+    sheenColor: new THREE.Color(0x6fd6ff),
+    sheenRoughness: 0.5
+  })
+);
+membrane.userData = { name: "Membrana plasmática" };
+scene.add(membrane);
+
+// Núcleo detalhado
+const nucleus = new THREE.Mesh(
+  new THREE.SphereGeometry(4.2, 64, 64),
+  new THREE.MeshPhysicalMaterial({
+    color: 0x3a4aff,
+    transmission: 0.7,
+    thickness: 0.5,
+    roughness: 0.25,
+    metalness: 0.1,
+    opacity: 0.7,
+    transparent: true,
+    clearcoat: 0.3,
+    sheen: 0.5,
+    sheenColor: new THREE.Color(0x8faaff)
+  })
+);
+nucleus.userData = { name: "Núcleo" };
+scene.add(nucleus);
+
+// Cromatina (fios)
+const chromatin = new THREE.Group();
+for(let i=0;i<18;i++){
+  const points = [];
+  for(let j=0;j<12;j++){
+    points.push(new THREE.Vector3(
+      Math.sin(j/12*Math.PI*2+i)*2.7 + (Math.random()-0.5)*0.7,
+      Math.cos(j/12*Math.PI*2+i)*2.7 + (Math.random()-0.5)*0.7,
+      Math.sin(j/6*Math.PI+i)*1.2 + (Math.random()-0.5)*0.7
+    ));
+  }
+  const curve = new THREE.CatmullRomCurve3(points);
+  const geo = new THREE.TubeGeometry(curve, 64, 0.11, 8, false);
+  const mat = new THREE.MeshStandardMaterial({color:0x8faaff, roughness:0.3, metalness:0.2});
+  const mesh = new THREE.Mesh(geo, mat);
+  mesh.position.set(0,0,0);
+  mesh.userData = { name: "Cromatina" };
+  chromatin.add(mesh);
+}
+nucleus.add(chromatin);
+
+// Cromossomos alinhados em metáfase II
+const chromosomes = new THREE.Group();
+for(let i=0;i<23;i++){
+  const group = new THREE.Group();
+  const mat = new THREE.MeshStandardMaterial({color:0xffe0e0, roughness:0.2, metalness:0.2});
+  const geo = new THREE.CylinderGeometry(0.18,0.18,2.2,16);
+  const chr1 = new THREE.Mesh(geo, mat);
+  chr1.rotation.z = Math.PI/6;
+  const chr2 = new THREE.Mesh(geo, mat);
+  chr2.rotation.z = -Math.PI/6;
+  group.add(chr1); group.add(chr2);
+  group.position.set(Math.cos(i/23*Math.PI*2)*2.5, Math.sin(i/23*Math.PI*2)*2.5, 0.2*(i%2));
+  group.userData = { name: "Cromossomo (Metáfase II)" };
+  chromosomes.add(group);
+}
+nucleus.add(chromosomes);
+
+// Fuso meiótico dinâmico
+const spindle = new THREE.Group();
+for(let i=0;i<23;i++){
+  const geo = new THREE.CylinderGeometry(0.07,0.07,10,8);
+  const mat = new THREE.MeshStandardMaterial({color:0x33ff77, roughness:0.3, metalness:0.1, transparent:true, opacity:0.7});
+  const mt = new THREE.Mesh(geo, mat);
+  mt.position.set(Math.cos(i/23*Math.PI*2)*2.5, Math.sin(i/23*Math.PI*2)*2.5, 0);
+  mt.lookAt(0,0,0);
+  mt.userData = { name: "Microtúbulo do fuso" };
+  spindle.add(mt);
+}
+nucleus.add(spindle);
+
+// Mitocôndrias animadas
+const mitos = new THREE.Group();
+for(let i=0;i<60;i++){
+  const geo = new THREE.SphereGeometry(0.32, 12, 12);
+  const tex = new THREE.MeshStandardMaterial({
+    color: 0xffb366,
+    roughness: 0.45,
+    metalness: 0.25,
+    emissive: 0xff6600,
+    emissiveIntensity: 0.12
+  });
+  const mito = new THREE.Mesh(geo, tex);
+  mito.position.set(
+    (Math.random()-0.5)*7.5,
+    (Math.random()-0.5)*7.5,
+    (Math.random()-0.5)*7.5
+  );
+  mito.userData = { name: "Mitocôndria" };
+  mitos.add(mito);
+}
+scene.add(mitos);
+
+// Complexo de Golgi
+const golgi = new THREE.Group();
+for(let i=0;i<6;i++){
+  const mesh = new THREE.Mesh(
+    new THREE.TorusGeometry(0.5, 0.13, 8, 24, Math.PI),
+    new THREE.MeshPhysicalMaterial({color:0xffc4a3, roughness:0.4, metalness:0.2, transmission:0.3, thickness:0.2})
+  );
+  mesh.position.set(
+    5.5 + Math.random()*1.2,
+    (Math.random()-0.5)*2,
+    (Math.random()-0.5)*2
+  );
+  mesh.rotation.z = Math.random()*Math.PI;
+  mesh.userData = { name: "Complexo de Golgi" };
+  golgi.add(mesh);
+}
+scene.add(golgi);
+
+// Retículo Endoplasmático Rugoso (RER)
+const rer = new THREE.Group();
+for(let i=0;i<8;i++){
+  const mesh = new THREE.Mesh(
+    new THREE.TorusKnotGeometry(0.5, 0.09, 64, 8, 2, 3),
+    new THREE.MeshPhysicalMaterial({color:0x9be5ff, roughness:0.5, metalness:0.2, transmission:0.2, thickness:0.1})
+  );
+  mesh.position.set(
+    -5.5 + Math.random()*1.2,
+    (Math.random()-0.5)*2,
+    (Math.random()-0.5)*2
+  );
+  mesh.userData = { name: "RER" };
+  rer.add(mesh);
+}
+scene.add(rer);
+
+// Retículo Endoplasmático Liso (REL)
+const rel = new THREE.Group();
+for(let i=0;i<6;i++){
+  const mesh = new THREE.Mesh(
+    new THREE.TorusGeometry(0.4, 0.08, 8, 16, Math.PI*1.2),
+    new THREE.MeshPhysicalMaterial({color:0x7fffd4, roughness:0.5, metalness:0.2, transmission:0.2, thickness:0.1})
+  );
+  mesh.position.set(
+    -4.5 + Math.random()*1.2,
+    (Math.random()-0.5)*2,
+    (Math.random()-0.5)*2
+  );
+  mesh.userData = { name: "REL" };
+  rel.add(mesh);
+}
+scene.add(rel);
+
+// Lisossomos
+const lysosomes = new THREE.Group();
+for(let i=0;i<10;i++){
+  const mesh = new THREE.Mesh(
+    new THREE.SphereGeometry(0.22, 10, 10),
+    new THREE.MeshPhysicalMaterial({color:0xe74c3c, roughness:0.5, metalness:0.2, transmission:0.1, thickness:0.1})
+  );
+  mesh.position.set(
+    (Math.random()-0.5)*8,
+    (Math.random()-0.5)*8,
+    (Math.random()-0.5)*8
+  );
+  mesh.userData = { name: "Lisossomo" };
+  lysosomes.add(mesh);
+}
+scene.add(lysosomes);
+
+// Peroxissomos
+const peroxisomes = new THREE.Group();
+for(let i=0;i<8;i++){
+  const mesh = new THREE.Mesh(
+    new THREE.SphereGeometry(0.18, 10, 10),
+    new THREE.MeshPhysicalMaterial({color:0xafff7f, roughness:0.5, metalness:0.2, transmission:0.1, thickness:0.1})
+  );
+  mesh.position.set(
+    (Math.random()-0.5)*8,
+    (Math.random()-0.5)*8,
+    (Math.random()-0.5)*8
+  );
+  mesh.userData = { name: "Peroxissomo" };
+  peroxisomes.add(mesh);
+}
+scene.add(peroxisomes);
+
+// Centríolos
+const centrioles = new THREE.Group();
+for(let i=0;i<2;i++){
+  const mesh = new THREE.Mesh(
+    new THREE.CylinderGeometry(0.18, 0.18, 1.1, 16),
+    new THREE.MeshPhysicalMaterial({color:0xffe066, roughness:0.4, metalness:0.3, transmission:0.1, thickness:0.1})
+  );
+  mesh.position.set(
+    0.5 + i*1.2,
+    4.5 + i*0.5,
+    0
+  );
+  mesh.rotation.z = Math.PI/3*i;
+  mesh.userData = { name: "Centríolo" };
+  centrioles.add(mesh);
+}
+scene.add(centrioles);
+
+// Grânulos corticais animados
+const cortical = new THREE.Group();
+for(let i=0;i<60;i++){
+  const g = new THREE.Mesh(
+    new THREE.SphereGeometry(0.18, 8, 8),
+    new THREE.MeshPhysicalMaterial({color:0xffff99, roughness:0.4, metalness:0.1, transmission:0.2, thickness:0.1})
+  );
+  const phi = Math.random()*Math.PI*2, theta = Math.random()*Math.PI;
+  g.position.set(
+    Math.sin(theta)*Math.cos(phi)*9.5,
+    Math.sin(theta)*Math.sin(phi)*9.5,
+    Math.cos(theta)*9.5
+  );
+  g.userData = { name: "Grânulo cortical", active: true };
+  cortical.add(g);
+}
+scene.add(cortical);
+
+// Centelhas de zinco (animadas)
+const zincSparks = [];
+function spawnZincSpark() {
+  const geo = new THREE.SphereGeometry(0.08, 6, 6);
+  const mat = new THREE.MeshPhysicalMaterial({color:0x6fd6ff, emissive:0x6fd6ff, emissiveIntensity:0.7, transparent:true, opacity:0.8, transmission:0.5, thickness:0.1});
+  const spark = new THREE.Mesh(geo, mat);
+  const phi = Math.random()*Math.PI*2, theta = Math.random()*Math.PI;
+  spark.position.set(
+    Math.sin(theta)*Math.cos(phi)*9.7,
+    Math.sin(theta)*Math.sin(phi)*9.7,
+    Math.cos(theta)*9.7
+  );
+  spark.userData = { name: "Centelha de zinco", life: 1.5+Math.random()*1.5 };
+  scene.add(spark);
+  zincSparks.push(spark);
+}
+
+// Oscilações de cálcio (partículas animadas)
+const caParticles = [];
+for(let i=0;i<30;i++){
+  const geo = new THREE.SphereGeometry(0.09, 8, 8);
+  const mat = new THREE.MeshPhysicalMaterial({color:0x88ffff, emissive:0x88ffff, emissiveIntensity:0.3, transparent:true, opacity:0.7, transmission:0.3, thickness:0.1});
+  const ca = new THREE.Mesh(geo, mat);
+  ca.position.set(
+    (Math.random()-0.5)*7,
+    (Math.random()-0.5)*7,
+    (Math.random()-0.5)*7
+  );
+  ca.userData = { name: "Íon Ca2+" };
+  caParticles.push(ca);
+  scene.add(ca);
+}
+
+// Proteínas de membrana: transporte, bombas, glicoproteínas
+const membraneProteins = new THREE.Group();
+for(let i=0;i<40;i++){
+  const prot = new THREE.Mesh(
+    new THREE.CylinderGeometry(0.09, 0.09, 0.5, 12),
+    new THREE.MeshPhysicalMaterial({
+      color: i%3===0 ? 0x00eaff : (i%3===1 ? 0xff66ff : 0x66ff66),
+      metalness: 0.7,
+      roughness: 0.2,
+      clearcoat: 0.7,
+      reflectivity: 0.7,
+      transmission: 0.5,
+      sheen: 1,
+      sheenColor: new THREE.Color(i%3===0 ? 0x00eaff : (i%3===1 ? 0xff66ff : 0x66ff66)),
+      sheenRoughness: 0.2
+    })
+  );
+  const phi = Math.random()*Math.PI*2, theta = Math.random()*Math.PI;
+  prot.position.set(
+    Math.sin(theta)*Math.cos(phi)*10.1,
+    Math.sin(theta)*Math.sin(phi)*10.1,
+    Math.cos(theta)*10.1
+  );
+  prot.rotation.x = Math.random()*Math.PI;
+  prot.rotation.y = Math.random()*Math.PI;
+  prot.userData = { name: i%3===0 ? "Proteína de transporte" : (i%3===1 ? "Bomba iônica" : "Glicoproteína") };
+  membraneProteins.add(prot);
+}
+scene.add(membraneProteins);
+
+// Fluxo intracelular (partículas citoplasmáticas)
+const cytoParticles = [];
+for(let i=0;i<120;i++){
+  const geo = new THREE.SphereGeometry(0.07, 6, 6);
+  const mat = new THREE.MeshPhysicalMaterial({color:0x6fd6ff, roughness:0.7, metalness:0.1, transparent:true, opacity:0.5, transmission:0.2, thickness:0.1});
+  const p = new THREE.Mesh(geo, mat);
+  p.position.set(
+    (Math.random()-0.5)*8,
+    (Math.random()-0.5)*8,
+    (Math.random()-0.5)*8
+  );
+  p.userData = { name: "Partícula citoplasmática" };
+  cytoParticles.push(p);
+  scene.add(p);
+}
+
+// Microfilamentos e citoesqueleto dinâmico
+const filaments = new THREE.Group();
+for(let i=0;i<18;i++){
+  const points = [];
+  for(let j=0;j<8;j++){
+    points.push(new THREE.Vector3(
+      Math.sin(j/8*Math.PI*2+i)*4.5 + (Math.random()-0.5)*0.7,
+      Math.cos(j/8*Math.PI*2+i)*4.5 + (Math.random()-0.5)*0.7,
+      Math.sin(j/4*Math.PI+i)*2.2 + (Math.random()-0.5)*0.7
+    ));
+  }
+  const curve = new THREE.CatmullRomCurve3(points);
+  const geo = new THREE.TubeGeometry(curve, 32, 0.09, 6, false);
+  const mat = new THREE.MeshStandardMaterial({color:0x33ff77, roughness:0.3, metalness:0.1, transparent:true, opacity:0.7});
+  const mesh = new THREE.Mesh(geo, mat);
+  mesh.userData = { name: "Microfilamento" };
+  filaments.add(mesh);
+}
+scene.add(filaments);
+
+// Reação cortical pós-fertilização
+let fertilized = false;
+function triggerCorticalReaction() {
+  if (fertilized) return;
+  fertilized = true;
+  // Exocitose dos grânulos corticais e centelhas de zinco
+  cortical.children.forEach(g => {
+    g.material.color.set(0x00eaff);
+    g.userData.active = false;
+    for(let i=0;i<2;i++) spawnZincSpark();
+  });
+}
+
+// Tooltip
+const tooltip = document.getElementById('tooltip');
+let hovered = null;
+const ray = new THREE.Raycaster();
+const mouse = new THREE.Vector2();
+renderer.domElement.addEventListener('pointermove', ev => {
+  const rect = renderer.domElement.getBoundingClientRect();
+  mouse.x = ((ev.clientX - rect.left) / rect.width) * 2 - 1;
+  mouse.y = -((ev.clientY - rect.top) / rect.height) * 2 + 1;
+  ray.setFromCamera(mouse, camera);
+  const intersects = ray.intersectObjects(scene.children, true);
+  if (intersects.length > 0 && intersects[0].object.userData && intersects[0].object.userData.name) {
+    hovered = intersects[0].object;
+    tooltip.style.display = 'block';
+    tooltip.textContent = hovered.userData.name;
+    tooltip.style.left = ev.clientX + 12 + 'px';
+    tooltip.style.top = ev.clientY + 8 + 'px';
+  } else {
+    hovered = null;
+    tooltip.style.display = 'none';
+  }
+});
+
+// Fertilização simulada ao clicar duas vezes
+renderer.domElement.addEventListener('dblclick', () => {
+  triggerCorticalReaction();
+});
+
+// Animação principal
+let t = 0;
+function animate() {
+  t += 0.012;
+  controls.update();
+
+  // Mitocôndrias movimento sutil
+  mitos.children.forEach((m,i) => {
+    m.position.x += Math.sin(t+i)*0.01;
+    m.position.y += Math.cos(t+i*1.2)*0.01;
+  });
+
+  // Grânulos corticais movimento sutil
+  cortical.children.forEach((g,i) => {
+    if(g.userData.active){
+      g.position.x += Math.sin(t+i)*0.008;
+      g.position.y += Math.cos(t+i*1.3)*0.008;
+    }
+  });
+
+  // Ca2+ oscilações
+  caParticles.forEach((c,i) => {
+    c.position.x += Math.sin(t*2+i)*0.02;
+    c.position.y += Math.cos(t*2+i*1.1)*0.02;
+  });
+
+  // Fluxo citoplasmático
+  cytoParticles.forEach((p,i) => {
+    p.position.x += Math.sin(t*1.5+i)*0.01;
+    p.position.y += Math.cos(t*1.5+i*1.2)*0.01;
+  });
+
+  // Microfilamentos dinâmicos
+  filaments.children.forEach((f,i) => {
+    f.rotation.z = Math.sin(t+i)*0.2;
+    f.rotation.x = Math.cos(t+i*1.1)*0.2;
+  });
+
+  // Fuso dinâmico
+  spindle.children.forEach((mt,i) => {
+    mt.rotation.z = Math.sin(t*1.2+i)*0.1;
+  });
+
+  // Centelhas de zinco animadas
+  for(let i=zincSparks.length-1;i>=0;i--){
+    const s = zincSparks[i];
+    s.position.x += (Math.random()-0.5)*0.12;
+    s.position.y += (Math.random()-0.5)*0.12;
+    s.position.z += (Math.random()-0.5)*0.12;
+    s.userData.life -= 0.016;
+    s.material.opacity = Math.max(0, s.userData.life/2);
+    if(s.userData.life<=0){
+      scene.remove(s);
+      zincSparks.splice(i,1);
+    }
+  }
+
+  renderer.render(scene, camera);
+  requestAnimationFrame(animate);
+}
+animate();
+
+window.addEventListener('resize', () => {
+  camera.aspect = window.innerWidth/window.innerHeight;
+  camera.updateProjectionMatrix();
+  renderer.setSize(window.innerWidth, window.innerHeight);
+});
+</script>
+</body>
+</html>
